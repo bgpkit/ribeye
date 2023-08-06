@@ -14,10 +14,9 @@ keywords = ["bgp", "bgpkit", "api"]
 
 [dependencies]
 
-thiserror = "1.0"
+anyhow = "1.0"
 tracing = "0.1"
-bgpkit-parser = "0.9.4"
-oneio = {version="0.11.0", features = ["lib", "s3"]}
+bgpkit-parser = "0.10.0-alpha.1"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.17"
