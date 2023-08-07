@@ -22,6 +22,10 @@ enum Commands {
         /// Number of days to search back for
         #[clap(short, long, default_value = "1")]
         days: u32,
+
+        /// Output directory
+        #[clap(short, long, default_value = "./results")]
+        dir: String,
     },
 }
 
@@ -36,7 +40,7 @@ fn main() {
     let opts = Cli::parse();
 
     match opts.command {
-        Commands::Cook { days } => {
+        Commands::Cook { days, dir } => {
             // find corresponding RIB dump files
             let now = chrono::Utc::now().naive_utc();
             let ts_start = now - chrono::Duration::days(days as i64);
@@ -54,7 +58,7 @@ fn main() {
 
             rib_files.par_iter().for_each(|item| {
                 let url = item.url.clone();
-                let peer_stats = PeerStatsProcessor::new_from_broker_item(item, "./results");
+                let peer_stats = PeerStatsProcessor::new_from_broker_item(item, dir.as_str());
                 let mut ribeye = RibEye::new();
                 ribeye.add_processor(peer_stats.to_boxed()).unwrap();
                 ribeye.process_mrt_file(url.as_str()).unwrap();
