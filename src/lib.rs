@@ -82,6 +82,8 @@ impl RibEye {
             return Ok(());
         }
 
+        info!("processing RIB file: {}", file_path);
+
         let parser = bgpkit_parser::BgpkitParser::new(file_path)?;
         for msg in parser {
             for processor in &mut self.processors {

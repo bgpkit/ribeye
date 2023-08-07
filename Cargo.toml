@@ -1,6 +1,6 @@
 [package]
 name = "ribeye"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 authors = ["Mingwei Zhang <mingwei@bgpkit.com>"]
 readme = "README.md"
@@ -8,9 +8,15 @@ license = "MIT"
 repository = "https://github.com/bgpkit/ribeye"
 documentation = "https://docs.rs/ribeye"
 description = """
-Rust framework for BGP RIB data processing.
+ribeye -- a Rust library for BGP RIB data processing.
 """
 keywords = ["bgp", "bgpkit", "api"]
+default-run = "ribeye"
+
+[[bin]]
+name = "ribeye"
+path = "src/cli/ribeye.rs"
+required-features = ["cli"]
 
 [dependencies]
 
@@ -22,10 +28,18 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = {version = "1.0", optional = true }
 ipnet = { version = "2.4", optional = true }
 bzip2 = { version = "0.4", optional = true }
+bgpkit-broker = {version="0.7.0-alpha.3", optional = true}
+chrono = {version = "0.4.26", optional = true }
+
+### CLI
+clap = {version = "4.3", features = ["derive"], optional = true }
+tracing-subscriber = {version="0.3", features = ["env-filter"], optional = true }
+rayon = { version="1.7", optional = true }
 
 [features]
 default = ["processors"]
-processors = [ "ipnet", "serde", "serde_json", "bzip2" ]
+processors = [ "ipnet", "serde", "serde_json", "bzip2", "bgpkit-broker", "chrono"]
+cli = [ "processors", "clap", "tracing-subscriber", "rayon"]
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
