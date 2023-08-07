@@ -18,5 +18,14 @@ anyhow = "1.0"
 tracing = "0.1"
 bgpkit-parser = "0.10.0-alpha.1"
 
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = {version = "1.0", optional = true }
+ipnet = { version = "2.4", optional = true }
+bzip2 = { version = "0.4", optional = true }
+
+[features]
+default = ["processors"]
+processors = [ "ipnet", "serde", "serde_json", "bzip2" ]
+
 [dev-dependencies]
-tracing-subscriber = "0.3.17"
+tracing-subscriber = "0.3"
