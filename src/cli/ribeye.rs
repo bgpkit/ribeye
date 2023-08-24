@@ -2,7 +2,7 @@ use bgpkit_broker::BrokerItem;
 use chrono::Timelike;
 use clap::{Parser, Subcommand};
 use rayon::prelude::*;
-use ribeye::processors::PeerStatsProcessor;
+use ribeye::processors::{PeerStatsProcessor, Prefix2AsProcessor};
 use ribeye::{MessageProcessor, RibEye};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -59,8 +59,10 @@ fn main() {
             rib_files.par_iter().for_each(|item| {
                 let url = item.url.clone();
                 let peer_stats = PeerStatsProcessor::new_from_broker_item(item, dir.as_str());
+                let pfx2as = Prefix2AsProcessor::new_from_broker_item(item, dir.as_str());
                 let mut ribeye = RibEye::new();
                 ribeye.add_processor(peer_stats.to_boxed()).unwrap();
+                ribeye.add_processor(pfx2as.to_boxed()).unwrap();
                 ribeye.process_mrt_file(url.as_str()).unwrap();
             });
         }

@@ -2,6 +2,7 @@
 //!
 //! Each route collector peer has a corresponding counting struct.
 
+use crate::processors::meta::{get_output_path, ProcessorMeta, RibMeta};
 use crate::{MessageProcessor, SkipProcessor};
 use anyhow::anyhow;
 use bgpkit_broker::BrokerItem;
@@ -9,13 +10,12 @@ use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
 use bzip2::write::BzEncoder;
 use bzip2::Compression;
-use chrono::{Datelike, NaiveDateTime};
+use chrono::NaiveDateTime;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::{BufWriter, Write};
 use std::net::IpAddr;
 use tracing::info;
@@ -70,27 +70,26 @@ impl Serialize for PeerInfo {
 }
 
 pub struct PeerStatsProcessor {
-    project: String,
-    collector: String,
-    rib_dump_url: String,
+    rib_meta: RibMeta,
+    processor_meta: ProcessorMeta,
     output_path: String,
     peer_info_map: HashMap<IpAddr, PeerInfo>,
 }
 
 impl PeerStatsProcessor {
     pub fn new_from_broker_item(item: &BrokerItem, output_dir: &str) -> Self {
-        let project = match item.collector_id.starts_with("rrc") {
-            true => "riperis".to_string(),
-            false => "route-views".to_string(),
+        let rib_meta = RibMeta::from(item);
+        let processor_meta = ProcessorMeta {
+            name: "peer-stats".to_string(),
+            output_dir: output_dir.to_string(),
         };
-
-        Self::new(
-            project.as_str(),
-            item.collector_id.as_str(),
-            item.url.as_str(),
-            &item.ts_start,
-            output_dir,
-        )
+        let output_path = get_output_path(&rib_meta, &processor_meta);
+        Self {
+            rib_meta,
+            processor_meta,
+            output_path,
+            peer_info_map: HashMap::new(),
+        }
     }
     pub fn new(
         project: &str,
@@ -99,28 +98,23 @@ impl PeerStatsProcessor {
         timestamp: &NaiveDateTime,
         output_dir: &str,
     ) -> Self {
-        let output_file_dir = format!(
-            "{}/{}/{:04}/{:02}",
-            output_dir,
-            collector,
-            timestamp.year(),
-            timestamp.month(),
-        );
-        fs::create_dir_all(output_file_dir.as_str()).unwrap();
-        let output_path = format!(
-            "{}/peer-stats_{}_{:04}-{:02}-{:02}_{}.json.bz2",
-            output_file_dir.as_str(),
-            collector,
-            timestamp.year(),
-            timestamp.month(),
-            timestamp.day(),
-            timestamp.timestamp()
-        );
+        let rib_meta = RibMeta {
+            project: project.to_string(),
+            collector: collector.to_string(),
+            rib_dump_url: rib_dump_url.to_string(),
+            timestamp: timestamp.clone(),
+        };
+
+        let processor_meta = ProcessorMeta {
+            name: "peer-stats".to_string(),
+            output_dir: output_dir.to_string(),
+        };
+
+        let output_path = get_output_path(&rib_meta, &processor_meta);
 
         PeerStatsProcessor {
-            project: project.to_string(),
-            collector: project.to_string(),
-            rib_dump_url: rib_dump_url.to_string(),
+            rib_meta,
+            processor_meta,
             output_path,
             peer_info_map: HashMap::new(),
         }
@@ -133,17 +127,17 @@ impl Serialize for PeerStatsProcessor {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("PeerStats", 4)?;
-        state.serialize_field("project", &self.project)?;
-        state.serialize_field("collector", &self.collector)?;
-        state.serialize_field("rib_dump_url", &self.rib_dump_url)?;
-        state.serialize_field("peers", &self.peer_info_map)?;
+        state.serialize_field("project", &self.rib_meta.project.as_str())?;
+        state.serialize_field("collector", &self.rib_meta.collector.as_str())?;
+        state.serialize_field("rib_dump_url", &self.rib_meta.rib_dump_url.as_str())?;
+        state.serialize_field("pfx2as", &self.peer_info_map)?;
         state.end()
     }
 }
 
 impl MessageProcessor for PeerStatsProcessor {
     fn name(&self) -> String {
-        "peer_stats".to_string()
+        self.processor_meta.name.clone()
     }
 
     fn initialize(&mut self) -> anyhow::Result<SkipProcessor> {
