@@ -3,7 +3,7 @@ job "ribeye_periodic" {
   type = "batch"
 
   periodic {
-    cron             = "5 */2 * * *"
+    cron             = "5 8 * * *"
     prohibit_overlap = true
   }
 
