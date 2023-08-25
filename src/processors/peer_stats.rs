@@ -3,22 +3,17 @@
 //! Each route collector peer has a corresponding counting struct.
 
 use crate::processors::meta::{get_output_path, ProcessorMeta, RibMeta};
-use crate::{MessageProcessor, SkipProcessor};
-use anyhow::anyhow;
+use crate::MessageProcessor;
 use bgpkit_broker::BrokerItem;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
-use bzip2::write::BzEncoder;
-use bzip2::Compression;
 use chrono::NaiveDateTime;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::io::{BufWriter, Write};
 use std::net::IpAddr;
-use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
@@ -72,7 +67,6 @@ impl Serialize for PeerInfo {
 pub struct PeerStatsProcessor {
     rib_meta: RibMeta,
     processor_meta: ProcessorMeta,
-    output_path: String,
     peer_info_map: HashMap<IpAddr, PeerInfo>,
 }
 
@@ -83,11 +77,9 @@ impl PeerStatsProcessor {
             name: "peer-stats".to_string(),
             output_dir: output_dir.to_string(),
         };
-        let output_path = get_output_path(&rib_meta, &processor_meta);
         Self {
             rib_meta,
             processor_meta,
-            output_path,
             peer_info_map: HashMap::new(),
         }
     }
@@ -102,7 +94,7 @@ impl PeerStatsProcessor {
             project: project.to_string(),
             collector: collector.to_string(),
             rib_dump_url: rib_dump_url.to_string(),
-            timestamp: timestamp.clone(),
+            timestamp: *timestamp,
         };
 
         let processor_meta = ProcessorMeta {
@@ -110,28 +102,11 @@ impl PeerStatsProcessor {
             output_dir: output_dir.to_string(),
         };
 
-        let output_path = get_output_path(&rib_meta, &processor_meta);
-
         PeerStatsProcessor {
             rib_meta,
             processor_meta,
-            output_path,
             peer_info_map: HashMap::new(),
         }
-    }
-}
-
-impl Serialize for PeerStatsProcessor {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("PeerStats", 4)?;
-        state.serialize_field("project", &self.rib_meta.project.as_str())?;
-        state.serialize_field("collector", &self.rib_meta.collector.as_str())?;
-        state.serialize_field("rib_dump_url", &self.rib_meta.rib_dump_url.as_str())?;
-        state.serialize_field("pfx2as", &self.peer_info_map)?;
-        state.end()
     }
 }
 
@@ -140,17 +115,8 @@ impl MessageProcessor for PeerStatsProcessor {
         self.processor_meta.name.clone()
     }
 
-    fn initialize(&mut self) -> anyhow::Result<SkipProcessor> {
-        match std::path::Path::new(self.output_path.as_str()).exists() {
-            true => {
-                info!(
-                    "output file {} exists, skip peer-stats processing",
-                    self.output_path.as_str()
-                );
-                Ok(SkipProcessor::Yes)
-            }
-            false => Ok(SkipProcessor::No),
-        }
+    fn output_path(&self) -> Option<String> {
+        Some(get_output_path(&self.rib_meta, &self.processor_meta))
     }
 
     fn process_entry(&mut self, elem: &BgpElem) -> anyhow::Result<()> {
@@ -188,23 +154,14 @@ impl MessageProcessor for PeerStatsProcessor {
         Ok(())
     }
 
-    fn finalize(&mut self) -> anyhow::Result<()> {
-        info!(
-            "finalizing peer-stats processing, writing output to {}",
-            self.output_path.as_str()
-        );
-        let file = match std::fs::File::create(self.output_path.as_str()) {
-            Err(_why) => return Err(anyhow!("couldn't open {}", self.output_path.as_str())),
-            Ok(file) => file,
-        };
+    fn to_result_string(&self) -> Option<String> {
+        let value = json!({
+            "project": &self.rib_meta.project.as_str(),
+            "collector": &self.rib_meta.collector.as_str(),
+            "rib_dump_url": &self.rib_meta.rib_dump_url.as_str(),
+            "peer": &self.peer_info_map,
+        });
 
-        let compressor = BzEncoder::new(file, Compression::best());
-        let mut writer = BufWriter::with_capacity(128 * 1024, compressor);
-
-        let data = json!(self);
-
-        writer.write_all(serde_json::to_string_pretty(&data).unwrap().as_ref())?;
-
-        Ok(())
+        serde_json::to_string_pretty(&value).ok()
     }
 }

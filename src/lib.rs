@@ -15,23 +15,72 @@ pub mod processors;
 
 use anyhow::Result;
 use bgpkit_parser::BgpElem;
+use std::io::Write;
 use tracing::info;
 
 pub trait MessageProcessor {
     /// Get the name of the processor
     fn name(&self) -> String;
 
+    fn output_path(&self) -> Option<String>;
+
     /// Initialize the processor, return None if the processor should be skipped
     fn initialize(&mut self) -> Result<SkipProcessor> {
-        // by default, do not skip any processor
-        Ok(SkipProcessor::No)
+        match self.output_path() {
+            None => {
+                // by default, do not skip any processor
+                Ok(SkipProcessor::No)
+            }
+            Some(path) => match std::path::Path::new(path.as_str()).exists() {
+                true => {
+                    info!(
+                        "output file {} exists, skip peer-stats processing",
+                        path.as_str()
+                    );
+                    Ok(SkipProcessor::Yes)
+                }
+                false => Ok(SkipProcessor::No),
+            },
+        }
     }
 
     /// Process a single entry in the RIB
     fn process_entry(&mut self, elem: &BgpElem) -> Result<()>;
 
+    /// Generate final result in String to be written to output file
+    fn to_result_string(&self) -> Option<String> {
+        None
+    }
+
     /// Finalize the processor, including producing the output and storing it
-    fn finalize(&mut self) -> Result<()>;
+    fn finalize(&mut self) -> Result<()> {
+        if self.output_path().is_none() {
+            return Ok(());
+        }
+
+        let output_string = match self.to_result_string() {
+            None => return Ok(()),
+            Some(o) => o,
+        };
+
+        let path = self.output_path().unwrap();
+        info!(
+            "finalizing {} processing, writing output to {}",
+            self.name(),
+            path.as_str()
+        );
+        let file = match std::fs::File::create(path.as_str()) {
+            Err(_why) => return Err(anyhow::anyhow!("couldn't open {}", path.as_str())),
+            Ok(file) => file,
+        };
+
+        let compressor = bzip2::write::BzEncoder::new(file, bzip2::Compression::best());
+        let mut writer = std::io::BufWriter::with_capacity(128 * 1024, compressor);
+
+        writer.write_all(output_string.as_ref())?;
+
+        Ok(())
+    }
 
     fn to_boxed(self) -> Box<dyn MessageProcessor>
     where

@@ -7,5 +7,6 @@ mod meta;
 mod peer_stats;
 mod pfx2as;
 
+pub use as2rel::As2relProcessor;
 pub use peer_stats::PeerStatsProcessor;
 pub use pfx2as::Prefix2AsProcessor;
