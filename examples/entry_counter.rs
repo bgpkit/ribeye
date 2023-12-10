@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
-use ribeye::{MessageProcessor, RibEye};
+use ribeye::{MessageProcessor, RibEye, RibMeta};
 
 #[derive(Default)]
 struct EntryCounter {
@@ -23,6 +23,14 @@ impl MessageProcessor for EntryCounter {
         "basic_counter".to_string()
     }
 
+    fn output_path(&self) -> Option<String> {
+        todo!()
+    }
+
+    fn reset_processor(&mut self, rib_meta: &RibMeta) {
+        todo!()
+    }
+
     fn process_entry(&mut self, elem: &BgpElem) -> Result<()> {
         match elem.elem_type {
             ElemType::ANNOUNCE => {
@@ -35,7 +43,7 @@ impl MessageProcessor for EntryCounter {
         Ok(())
     }
 
-    fn finalize(&mut self) -> Result<()> {
+    fn output(&mut self) -> Result<()> {
         println!(
             "{}: {} announcements, {} withdrawals",
             self.name(),

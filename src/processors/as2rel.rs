@@ -1,9 +1,7 @@
 use crate::processors::meta::{get_output_path, ProcessorMeta, RibMeta};
 use crate::MessageProcessor;
-use bgpkit_broker::BrokerItem;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
-use chrono::NaiveDateTime;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -20,7 +18,7 @@ struct As2relEntry {
 }
 
 pub struct As2relProcessor {
-    rib_meta: RibMeta,
+    rib_meta: Option<RibMeta>,
     processor_meta: ProcessorMeta,
     as2rel_map: HashMap<(u32, u32, u8), (usize, HashSet<IpAddr>)>,
 }
@@ -31,39 +29,14 @@ const TIER1: [u32; 17] = [
 ];
 
 impl As2relProcessor {
-    pub fn new_from_broker_item(item: &BrokerItem, output_dir: &str) -> Self {
-        let rib_meta = RibMeta::from(item);
-        let processor_meta = ProcessorMeta {
-            name: "as2rel".to_string(),
-            output_dir: output_dir.to_string(),
-        };
-        Self {
-            rib_meta,
-            processor_meta,
-            as2rel_map: HashMap::new(),
-        }
-    }
-    pub fn new(
-        project: &str,
-        collector: &str,
-        rib_dump_url: &str,
-        timestamp: &NaiveDateTime,
-        output_dir: &str,
-    ) -> Self {
-        let rib_meta = RibMeta {
-            project: project.to_string(),
-            collector: collector.to_string(),
-            rib_dump_url: rib_dump_url.to_string(),
-            timestamp: timestamp.clone(),
-        };
-
+    pub fn new(output_dir: &str) -> Self {
         let processor_meta = ProcessorMeta {
             name: "as2rel".to_string(),
             output_dir: output_dir.to_string(),
         };
 
         Self {
-            rib_meta,
+            rib_meta: None,
             processor_meta,
             as2rel_map: HashMap::new(),
         }
@@ -91,18 +64,14 @@ impl MessageProcessor for As2relProcessor {
     }
 
     fn output_path(&self) -> Option<String> {
-        Some(get_output_path(&self.rib_meta, &self.processor_meta))
+        Some(get_output_path(
+            self.rib_meta.as_ref().unwrap(),
+            &self.processor_meta,
+        ))
     }
 
-    fn to_result_string(&self) -> Option<String> {
-        let value = json!({
-            "project": &self.rib_meta.project.as_str(),
-            "collector": &self.rib_meta.collector.as_str(),
-            "rib_dump_url": &self.rib_meta.rib_dump_url.as_str(),
-            "as2rel": &self.get_count_vec(),
-        });
-
-        serde_json::to_string_pretty(&value).ok()
+    fn reset_processor(&mut self, rib_meta: &RibMeta) {
+        self.rib_meta = Some(rib_meta.clone());
     }
 
     fn process_entry(&mut self, elem: &BgpElem) -> anyhow::Result<()> {
@@ -117,13 +86,14 @@ impl MessageProcessor for As2relProcessor {
         }
 
         // skip no-path or non-regular path
-        if elem.as_path.is_none() || elem.as_path.as_ref().unwrap().to_u32_vec().is_none() {
+        if elem.as_path.is_none() {
             return Ok(());
         }
 
-        let mut u32_path = elem.as_path.as_ref().unwrap().to_u32_vec().unwrap();
-        // deduplicate consecutive ASNs
-        u32_path.dedup();
+        let mut u32_path = match elem.as_path.as_ref().unwrap().to_u32_vec_opt(true) {
+            None => return Ok(()),
+            Some(p) => p,
+        };
 
         // get peers count
         for (asn1, asn2) in u32_path.iter().tuple_windows::<(&u32, &u32)>() {
@@ -167,5 +137,17 @@ impl MessageProcessor for As2relProcessor {
         }
 
         Ok(())
+    }
+
+    fn to_result_string(&self) -> Option<String> {
+        let rib_meta = self.rib_meta.as_ref().unwrap();
+        let value = json!({
+            "project": rib_meta.project.as_str(),
+            "collector": rib_meta.collector.as_str(),
+            "rib_dump_url": rib_meta.rib_dump_url.as_str(),
+            "as2rel": &self.get_count_vec(),
+        });
+
+        serde_json::to_string_pretty(&value).ok()
     }
 }

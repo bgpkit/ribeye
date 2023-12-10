@@ -38,7 +38,9 @@ pub fn get_output_path(rib_meta: &RibMeta, processor_meta: &ProcessorMeta) -> St
         rib_meta.timestamp.year(),
         rib_meta.timestamp.month(),
     );
-    std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
+    if !output_file_dir.starts_with("s3://") {
+        std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
+    }
     let output_path = format!(
         "{}/{}_{}_{:04}-{:02}-{:02}_{}.json.bz2",
         output_file_dir.as_str(),

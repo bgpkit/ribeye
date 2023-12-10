@@ -4,10 +4,8 @@
 
 use crate::processors::meta::{get_output_path, ProcessorMeta, RibMeta};
 use crate::MessageProcessor;
-use bgpkit_broker::BrokerItem;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
-use chrono::NaiveDateTime;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
@@ -65,45 +63,20 @@ impl Serialize for PeerInfo {
 }
 
 pub struct PeerStatsProcessor {
-    rib_meta: RibMeta,
+    rib_meta: Option<RibMeta>,
     processor_meta: ProcessorMeta,
     peer_info_map: HashMap<IpAddr, PeerInfo>,
 }
 
 impl PeerStatsProcessor {
-    pub fn new_from_broker_item(item: &BrokerItem, output_dir: &str) -> Self {
-        let rib_meta = RibMeta::from(item);
-        let processor_meta = ProcessorMeta {
-            name: "peer-stats".to_string(),
-            output_dir: output_dir.to_string(),
-        };
-        Self {
-            rib_meta,
-            processor_meta,
-            peer_info_map: HashMap::new(),
-        }
-    }
-    pub fn new(
-        project: &str,
-        collector: &str,
-        rib_dump_url: &str,
-        timestamp: &NaiveDateTime,
-        output_dir: &str,
-    ) -> Self {
-        let rib_meta = RibMeta {
-            project: project.to_string(),
-            collector: collector.to_string(),
-            rib_dump_url: rib_dump_url.to_string(),
-            timestamp: *timestamp,
-        };
-
+    pub fn new(output_dir: &str) -> Self {
         let processor_meta = ProcessorMeta {
             name: "peer-stats".to_string(),
             output_dir: output_dir.to_string(),
         };
 
         PeerStatsProcessor {
-            rib_meta,
+            rib_meta: None,
             processor_meta,
             peer_info_map: HashMap::new(),
         }
@@ -116,14 +89,21 @@ impl MessageProcessor for PeerStatsProcessor {
     }
 
     fn output_path(&self) -> Option<String> {
-        Some(get_output_path(&self.rib_meta, &self.processor_meta))
+        Some(get_output_path(
+            self.rib_meta.as_ref().unwrap(),
+            &self.processor_meta,
+        ))
+    }
+
+    fn reset_processor(&mut self, rib_meta: &RibMeta) {
+        self.rib_meta = Some(rib_meta.clone());
     }
 
     fn process_entry(&mut self, elem: &BgpElem) -> anyhow::Result<()> {
         let peer_info = self
             .peer_info_map
             .entry(elem.peer_ip)
-            .or_insert(PeerInfo::new_from_ip(elem.peer_ip, elem.peer_asn.asn));
+            .or_insert(PeerInfo::new_from_ip(elem.peer_ip, elem.peer_asn.to_u32()));
 
         if elem.elem_type != ElemType::ANNOUNCE {
             // skip processing non-announce messages
@@ -131,8 +111,10 @@ impl MessageProcessor for PeerStatsProcessor {
         }
 
         if let Some(path) = &elem.as_path {
-            if let Some(seq) = path.to_u32_vec() {
-                peer_info.num_connected_asns.extend(seq);
+            if let Some(seq) = path.to_u32_vec_opt(true) {
+                if let Some(next_hop) = seq.first() {
+                    peer_info.num_connected_asns.insert(*next_hop);
+                }
             }
         }
 
@@ -155,10 +137,11 @@ impl MessageProcessor for PeerStatsProcessor {
     }
 
     fn to_result_string(&self) -> Option<String> {
+        let rib_meta = self.rib_meta.as_ref().unwrap();
         let value = json!({
-            "project": &self.rib_meta.project.as_str(),
-            "collector": &self.rib_meta.collector.as_str(),
-            "rib_dump_url": &self.rib_meta.rib_dump_url.as_str(),
+            "project": rib_meta.project.as_str(),
+            "collector": rib_meta.collector.as_str(),
+            "rib_dump_url": rib_meta.rib_dump_url.as_str(),
             "peer": &self.peer_info_map,
         });
 

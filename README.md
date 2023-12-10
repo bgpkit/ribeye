@@ -9,7 +9,7 @@ Processors:
 - [X] `pfx2as`: prefix-to-AS mapping from a given RIB dump file
 - [X] `as2rel`: AS-level relationship
 
-Summarizer (summarize all files from the same day):
+Aggregator (aggregate from all files of the same day):
 - [ ] `peer-stats`
 - [ ] `pfx2as`
 - [ ] `as2rel`

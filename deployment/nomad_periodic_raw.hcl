@@ -3,7 +3,7 @@ job "ribeye_periodic" {
   type = "batch"
 
   periodic {
-    cron             = "5 8 * * *"
+    crons            = ["5 8 * * *"]
     prohibit_overlap = true
   }
 
@@ -13,7 +13,7 @@ job "ribeye_periodic" {
 
     config {
       command = "/usr/local/bin/ribeye"
-      args    = ["cook", "--dir", "/data/ribeye"]
+      args    = ["cook", "--dir", "s3://spaces/ribeye"]
     }
 
     resources {
