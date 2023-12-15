@@ -21,18 +21,8 @@ pub trait MessageProcessor {
     /// Get the name of the processor
     fn name(&self) -> String;
 
-    fn output_path(&self) -> Option<String>;
-
-    /// Check if a should skip processing
-    fn should_skip_local(&mut self) -> bool {
-        // by default, skip if output path file already exists
-        if let Some(path) = self.output_path() {
-            if std::path::Path::new(path.as_str()).exists() {
-                return true;
-            }
-        }
-        false
-    }
+    /// Output paths of the processor. An output path can be a local file path or an S3 path.
+    fn output_paths(&self) -> Option<Vec<String>>;
 
     fn reset_processor(&mut self, rib_meta: &RibMeta);
 
@@ -46,7 +36,7 @@ pub trait MessageProcessor {
 
     /// Finalize the processor, including producing the output and storing it
     fn output(&mut self) -> Result<()> {
-        if self.output_path().is_none() {
+        if self.output_paths().is_none() {
             // no output path, skip
             return Ok(());
         }
@@ -56,41 +46,42 @@ pub trait MessageProcessor {
             Some(o) => o,
         };
 
-        let output_path = self.output_path().unwrap();
+        let output_paths = self.output_paths().unwrap();
 
-        // if output_path starts with s3://, upload to S3
-        if output_path.starts_with("s3://") {
-            let path = self.output_path().unwrap();
-            info!(
-                "finalizing {} processing, writing output to {}",
-                self.name(),
-                path.as_str()
-            );
+        for output_path in output_paths {
+            // if output_path starts with s3://, upload to S3
+            if output_path.starts_with("s3://") {
+                info!(
+                    "finalizing {} processing, writing output to {}",
+                    self.name(),
+                    output_path.as_str(),
+                );
 
-            let temp_dir = tempfile::tempdir().unwrap();
-            let file_path = temp_dir
-                .path()
-                .join("temp.bz2")
-                .to_str()
-                .unwrap()
-                .to_string();
-            let mut writer = oneio::get_writer(file_path.as_str()).unwrap();
-            writer.write_all(output_string.as_ref())?;
-            drop(writer);
+                let temp_dir = tempfile::tempdir().unwrap();
+                let file_path = temp_dir
+                    .path()
+                    .join("temp.bz2")
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                let mut writer = oneio::get_writer(file_path.as_str()).unwrap();
+                writer.write_all(output_string.as_ref())?;
+                drop(writer);
 
-            let (bucket, p) = oneio::s3_url_parse(path.as_str())?;
-            oneio::s3_upload(bucket.as_str(), p.as_str(), file_path.as_str()).unwrap();
-            temp_dir.close().unwrap();
-        } else {
-            info!(
-                "finalizing {} processing, writing output to {}",
-                self.name(),
-                output_path.as_str()
-            );
+                let (bucket, p) = oneio::s3_url_parse(output_path.as_str())?;
+                oneio::s3_upload(bucket.as_str(), p.as_str(), file_path.as_str()).unwrap();
+                temp_dir.close().unwrap();
+            } else {
+                info!(
+                    "finalizing {} processing, writing output to {}",
+                    self.name(),
+                    output_path.as_str()
+                );
 
-            let mut writer = oneio::get_writer(output_path.as_str())?;
-            writer.write_all(output_string.as_ref())?;
-            drop(writer);
+                let mut writer = oneio::get_writer(output_path.as_str())?;
+                writer.write_all(output_string.as_ref())?;
+                drop(writer);
+            }
         }
         Ok(())
     }

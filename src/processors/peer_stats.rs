@@ -2,7 +2,7 @@
 //!
 //! Each route collector peer has a corresponding counting struct.
 
-use crate::processors::meta::{get_output_path, ProcessorMeta, RibMeta};
+use crate::processors::meta::{get_default_output_paths, ProcessorMeta, RibMeta};
 use crate::MessageProcessor;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
@@ -88,8 +88,8 @@ impl MessageProcessor for PeerStatsProcessor {
         self.processor_meta.name.clone()
     }
 
-    fn output_path(&self) -> Option<String> {
-        Some(get_output_path(
+    fn output_paths(&self) -> Option<Vec<String>> {
+        Some(get_default_output_paths(
             self.rib_meta.as_ref().unwrap(),
             &self.processor_meta,
         ))

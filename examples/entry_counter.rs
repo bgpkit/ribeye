@@ -23,7 +23,7 @@ impl MessageProcessor for EntryCounter {
         "basic_counter".to_string()
     }
 
-    fn output_path(&self) -> Option<String> {
+    fn output_paths(&self) -> Option<String> {
         todo!()
     }
 
