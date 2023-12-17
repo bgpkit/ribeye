@@ -106,7 +106,7 @@ pub(crate) fn write_output_file(output_file_dir: &str, output_content: &str) -> 
             let tmp_dir = tempdir()?;
             let file_path = tmp_dir
                 .path()
-                .join("my-temporary-note.txt")
+                .join("latest.json.bz2")
                 .to_string_lossy()
                 .to_string();
             let mut writer = oneio::get_writer(file_path.as_str())?;
