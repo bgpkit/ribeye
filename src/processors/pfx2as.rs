@@ -1,10 +1,14 @@
-use crate::processors::meta::{get_default_output_paths, ProcessorMeta, RibMeta};
+use crate::processors::meta::{
+    get_default_output_path, get_latest_output_path, ProcessorMeta, RibMeta,
+};
+use crate::processors::write_output_file;
 use crate::MessageProcessor;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prefix2AsCount {
@@ -12,6 +16,21 @@ pub struct Prefix2AsCount {
     pub asn: u32,
     pub count: usize,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Prefix2AsCollectorJson {
+    pub project: String,
+    pub collector: String,
+    pub rib_dump_url: String,
+    pub pfx2as: Vec<Prefix2AsCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Prefix2AsSummaryJson {
+    rib_dump_urls: Vec<String>,
+    pfx2as: Vec<Prefix2AsCount>,
+}
+
 pub struct Prefix2AsProcessor {
     rib_meta: Option<RibMeta>,
     processor_meta: ProcessorMeta,
@@ -52,10 +71,10 @@ impl MessageProcessor for Prefix2AsProcessor {
     }
 
     fn output_paths(&self) -> Option<Vec<String>> {
-        Some(get_default_output_paths(
-            self.rib_meta.as_ref().unwrap(),
-            &self.processor_meta,
-        ))
+        Some(vec![
+            get_default_output_path(self.rib_meta.as_ref().unwrap(), &self.processor_meta),
+            get_latest_output_path(self.rib_meta.as_ref().unwrap(), &self.processor_meta),
+        ])
     }
 
     fn reset_processor(&mut self, rib_meta: &RibMeta) {
@@ -88,13 +107,68 @@ impl MessageProcessor for Prefix2AsProcessor {
 
     fn to_result_string(&self) -> Option<String> {
         let rib_meta = self.rib_meta.as_ref().unwrap();
-        let value = json!({
-            "project": rib_meta.project.as_str(),
-            "collector": rib_meta.collector.as_str(),
-            "rib_dump_url": rib_meta.rib_dump_url.as_str(),
-            "pfx2as": &self.get_count_vec(),
+        let value = json!(Prefix2AsCollectorJson {
+            project: rib_meta.project.clone(),
+            collector: rib_meta.collector.clone(),
+            rib_dump_url: rib_meta.rib_dump_url.clone(),
+            pfx2as: self.get_count_vec(),
         });
 
         serde_json::to_string_pretty(&value).ok()
+    }
+
+    fn summarize_latest(&self, rib_metas: &[RibMeta], ignore_error: bool) -> anyhow::Result<()> {
+        let mut pfx2as_map = HashMap::<(String, u32), u32>::new();
+
+        for rib_meta in rib_metas {
+            let latest_file_path = get_latest_output_path(rib_meta, &self.processor_meta);
+            info!("summarizing {}...", latest_file_path.as_str());
+            let data = match oneio::read_json_struct::<Prefix2AsCollectorJson>(
+                latest_file_path.as_str(),
+            ) {
+                Ok(d) => d,
+                Err(e) => {
+                    if ignore_error {
+                        warn!("failed to read {}, skipping...", latest_file_path.as_str());
+                        continue;
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "failed to read {}: {}",
+                            latest_file_path.as_str(),
+                            e
+                        ));
+                    }
+                }
+            };
+
+            for entry in data.pfx2as {
+                let count = pfx2as_map.entry((entry.prefix, entry.asn)).or_insert(0);
+                *count += entry.count as u32;
+            }
+        }
+        let json_data = Prefix2AsSummaryJson {
+            rib_dump_urls: rib_metas
+                .iter()
+                .map(|rib_meta| rib_meta.rib_dump_url.clone())
+                .collect(),
+            pfx2as: pfx2as_map
+                .iter()
+                .map(|((prefix, asn), count)| Prefix2AsCount {
+                    prefix: prefix.clone(),
+                    asn: *asn,
+                    count: *count as usize,
+                })
+                .collect(),
+        };
+
+        let output_file_dir = format!(
+            "{}/{}",
+            self.processor_meta.output_dir.as_str(),
+            self.processor_meta.name.as_str(),
+        );
+        let output_content = serde_json::to_string_pretty(&json_data)?;
+        write_output_file(output_file_dir.as_str(), output_content.as_str())?;
+
+        Ok(())
     }
 }

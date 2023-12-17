@@ -29,50 +29,42 @@ impl From<&BrokerItem> for RibMeta {
     }
 }
 
-pub fn get_default_output_paths(rib_meta: &RibMeta, processor_meta: &ProcessorMeta) -> Vec<String> {
-    let mut output_paths = vec![];
-    // time specific output folder
-    {
-        let output_file_dir = format!(
-            "{}/{}/{}/{:04}/{:02}",
-            processor_meta.output_dir.as_str(),
-            processor_meta.name.as_str(),
-            rib_meta.collector,
-            rib_meta.timestamp.year(),
-            rib_meta.timestamp.month(),
-        );
-        if !output_file_dir.starts_with("s3://") {
-            std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
-        }
-        let output_path = format!(
-            "{}/{}_{}_{:04}-{:02}-{:02}_{}.json.bz2",
-            output_file_dir.as_str(),
-            processor_meta.name.as_str(),
-            rib_meta.collector,
-            rib_meta.timestamp.year(),
-            rib_meta.timestamp.month(),
-            rib_meta.timestamp.day(),
-            rib_meta.timestamp.timestamp()
-        );
-        output_paths.push(output_path);
+pub fn get_default_output_path(rib_meta: &RibMeta, processor_meta: &ProcessorMeta) -> String {
+    let output_file_dir = format!(
+        "{}/{}/{}/{:04}/{:02}",
+        processor_meta.output_dir.as_str(),
+        processor_meta.name.as_str(),
+        rib_meta.collector,
+        rib_meta.timestamp.year(),
+        rib_meta.timestamp.month(),
+    );
+    if !output_file_dir.starts_with("s3://") {
+        std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
     }
+    let output_path = format!(
+        "{}/{}_{}_{:04}-{:02}-{:02}_{}.json.bz2",
+        output_file_dir.as_str(),
+        processor_meta.name.as_str(),
+        rib_meta.collector,
+        rib_meta.timestamp.year(),
+        rib_meta.timestamp.month(),
+        rib_meta.timestamp.day(),
+        rib_meta.timestamp.timestamp()
+    );
+    output_path
+}
 
-    // "latest.json" output
-    {
-        let output_file_dir = format!(
-            "{}/{}/{}",
-            processor_meta.output_dir.as_str(),
-            processor_meta.name.as_str(),
-            rib_meta.collector,
-        );
-        if !output_file_dir.starts_with("s3://") {
-            std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
-        }
-        let output_path = format!("{}/latest.json.bz2", output_file_dir.as_str(),);
-        output_paths.push(output_path);
+pub fn get_latest_output_path(rib_meta: &RibMeta, processor_meta: &ProcessorMeta) -> String {
+    let output_file_dir = format!(
+        "{}/{}/{}",
+        processor_meta.output_dir.as_str(),
+        processor_meta.name.as_str(),
+        rib_meta.collector,
+    );
+    if !output_file_dir.starts_with("s3://") {
+        std::fs::create_dir_all(output_file_dir.as_str()).unwrap();
     }
-
-    output_paths
+    format!("{}/latest.json.bz2", output_file_dir.as_str())
 }
 
 /// ProcessorMeta contains the meta information of a RIB processor.

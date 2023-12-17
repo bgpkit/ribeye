@@ -1,4 +1,7 @@
-use crate::processors::meta::{get_default_output_paths, ProcessorMeta, RibMeta};
+use crate::processors::meta::{
+    get_default_output_path, get_latest_output_path, ProcessorMeta, RibMeta,
+};
+use crate::processors::write_output_file;
 use crate::MessageProcessor;
 use bgpkit_parser::models::ElemType;
 use bgpkit_parser::BgpElem;
@@ -7,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use tracing::{info, warn};
 
 #[derive(Serialize, Deserialize)]
 struct As2relEntry {
@@ -15,6 +19,20 @@ struct As2relEntry {
     pub paths_count: usize,
     pub peers_count: usize,
     pub rel: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+struct As2relCollectorJson {
+    project: String,
+    collector: String,
+    rib_dump_url: String,
+    as2rel: Vec<As2relEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct As2relSummaryJson {
+    rib_dump_urls: Vec<String>,
+    as2rel: Vec<As2relEntry>,
 }
 
 pub struct As2relProcessor {
@@ -64,10 +82,10 @@ impl MessageProcessor for As2relProcessor {
     }
 
     fn output_paths(&self) -> Option<Vec<String>> {
-        Some(get_default_output_paths(
-            self.rib_meta.as_ref().unwrap(),
-            &self.processor_meta,
-        ))
+        Some(vec![
+            get_default_output_path(self.rib_meta.as_ref().unwrap(), &self.processor_meta),
+            get_latest_output_path(self.rib_meta.as_ref().unwrap(), &self.processor_meta),
+        ])
     }
 
     fn reset_processor(&mut self, rib_meta: &RibMeta) {
@@ -141,13 +159,70 @@ impl MessageProcessor for As2relProcessor {
 
     fn to_result_string(&self) -> Option<String> {
         let rib_meta = self.rib_meta.as_ref().unwrap();
-        let value = json!({
-            "project": rib_meta.project.as_str(),
-            "collector": rib_meta.collector.as_str(),
-            "rib_dump_url": rib_meta.rib_dump_url.as_str(),
-            "as2rel": &self.get_count_vec(),
-        });
+        let json_data = As2relCollectorJson {
+            project: rib_meta.project.clone(),
+            collector: rib_meta.collector.clone(),
+            rib_dump_url: rib_meta.rib_dump_url.clone(),
+            as2rel: self.get_count_vec(),
+        };
+        let value = json!(json_data);
 
         serde_json::to_string_pretty(&value).ok()
+    }
+
+    fn summarize_latest(&self, rib_metas: &[RibMeta], ignore_error: bool) -> anyhow::Result<()> {
+        let mut as2rel_map = HashMap::<(u32, u32, u8), (usize, usize)>::new();
+
+        for rib_meta in rib_metas {
+            let latest_file_path = get_latest_output_path(rib_meta, &self.processor_meta);
+            info!("summarizing {}...", latest_file_path.as_str());
+            let data =
+                match oneio::read_json_struct::<As2relCollectorJson>(latest_file_path.as_str()) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        if ignore_error {
+                            warn!("failed to read {}, skipping...", latest_file_path.as_str());
+                            continue;
+                        } else {
+                            return Err(anyhow::anyhow!(
+                                "failed to read {}: {}",
+                                latest_file_path.as_str(),
+                                e
+                            ));
+                        }
+                    }
+                };
+            for entry in data.as2rel {
+                let (asn1, asn2, rel) = (entry.asn1, entry.asn2, entry.rel);
+                let (msg_count, peers_count) =
+                    as2rel_map.entry((asn1, asn2, rel)).or_insert((0, 0));
+                *msg_count += entry.paths_count;
+                *peers_count += entry.peers_count;
+            }
+        }
+        let res: Vec<As2relEntry> = as2rel_map
+            .iter()
+            .map(|((asn1, asn2, rel), (count, peers))| As2relEntry {
+                asn1: *asn1,
+                asn2: *asn2,
+                paths_count: *count,
+                peers_count: *peers,
+                rel: *rel,
+            })
+            .collect();
+        let json_data = As2relSummaryJson {
+            rib_dump_urls: rib_metas.iter().map(|r| r.rib_dump_url.clone()).collect(),
+            as2rel: res,
+        };
+
+        let output_file_dir = format!(
+            "{}/{}",
+            self.processor_meta.output_dir.as_str(),
+            self.processor_meta.name.as_str(),
+        );
+        let output_content = serde_json::to_string_pretty(&json_data)?;
+        write_output_file(output_file_dir.as_str(), output_content.as_str())?;
+
+        Ok(())
     }
 }

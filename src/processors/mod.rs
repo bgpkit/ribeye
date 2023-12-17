@@ -15,6 +15,7 @@ pub use pfx2as::Prefix2AsProcessor;
 use anyhow::Result;
 use bgpkit_parser::BgpElem;
 use std::io::Write;
+use tempfile::tempdir;
 use tracing::info;
 
 pub trait MessageProcessor {
@@ -86,10 +87,41 @@ pub trait MessageProcessor {
         Ok(())
     }
 
+    /// Summarize the latest RIBEye result files
+    fn summarize_latest(&self, rib_metas: &[RibMeta], ignore_error: bool) -> Result<()>;
+
     fn to_boxed(self) -> Box<dyn MessageProcessor>
     where
         Self: Sized + 'static,
     {
         Box::new(self)
     }
+}
+
+pub(crate) fn write_output_file(output_file_dir: &str, output_content: &str) -> Result<()> {
+    let output_file_path = format!("{}/latest.json.bz2", output_file_dir);
+    match output_file_dir.starts_with("s3://") {
+        true => {
+            // write to a temporary file first
+            let tmp_dir = tempdir()?;
+            let file_path = tmp_dir
+                .path()
+                .join("my-temporary-note.txt")
+                .to_string_lossy()
+                .to_string();
+            let mut writer = oneio::get_writer(file_path.as_str())?;
+            write!(writer, "{}", output_content)?;
+            drop(writer);
+
+            let (bucket, p) = oneio::s3_url_parse(output_file_path.as_str())?;
+            oneio::s3_upload(bucket.as_str(), p.as_str(), file_path.as_str())?;
+        }
+        false => {
+            let mut writer = oneio::get_writer(output_file_path.as_str())?;
+            write!(writer, "{}", output_content)?;
+            drop(writer);
+        }
+    }
+
+    Ok(())
 }

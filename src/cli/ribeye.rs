@@ -1,6 +1,7 @@
 use bgpkit_broker::BrokerItem;
 use chrono::Timelike;
 use clap::{Parser, Subcommand};
+use itertools::Itertools;
 use rayon::prelude::*;
 use ribeye::processors::RibMeta;
 use ribeye::RibEye;
@@ -25,10 +26,14 @@ enum Commands {
     /// Process recent RIB dump files
     Cook {
         /// Number of days to search back for
-        #[clap(short, long, default_value = "1")]
+        #[clap(long, default_value = "1")]
         days: u32,
 
-        /// Output directory
+        /// limit to process the smallest N RIB dump files
+        #[clap(short, long)]
+        limit: Option<usize>,
+
+        /// Root data directory
         #[clap(short, long, default_value = "./results")]
         dir: String,
     },
@@ -58,18 +63,18 @@ fn main() {
     dotenvy::dotenv().ok();
 
     match opts.command {
-        Commands::Cook { days, dir } => {
+        Commands::Cook { days, dir, limit } => {
             // check s3 environment variables if dir starts with s3://
             if dir.starts_with("s3://") && oneio::s3_env_check().is_err() {
                 error!("S3 environment variables not set");
-                std::process::exit(1);
+                exit(1);
             }
 
             // find corresponding RIB dump files
             let now = chrono::Utc::now().naive_utc();
             let ts_start = now - chrono::Duration::days(days as i64);
             info!("Searching for RIB dump files since {}", ts_start);
-            let rib_files = bgpkit_broker::BgpkitBroker::new()
+            let mut rib_files = bgpkit_broker::BgpkitBroker::new()
                 .broker_url("https://api.broker.bgpkit.com/v3")
                 .data_type("rib")
                 .ts_start(ts_start.timestamp())
@@ -78,20 +83,29 @@ fn main() {
                 .unwrap()
                 .into_iter()
                 .filter(|entry| entry.ts_start.hour() == 0)
+                .sorted_by_key(|entry| entry.rough_size)
                 .collect::<Vec<BrokerItem>>();
+            rib_files = match limit {
+                None => rib_files,
+                Some(l) => rib_files.into_iter().take(l).collect::<Vec<BrokerItem>>(),
+            };
 
-            info!("Found {} matching RIB dump files", rib_files.len(),);
+            info!("processing {} matching RIB dump files", rib_files.len(),);
+            let rib_metas: Vec<RibMeta> = rib_files.iter().map(RibMeta::from).collect();
 
-            rib_files.par_iter().for_each(|item| {
-                let rib_meta = RibMeta::from(item);
+            // process each RIB file in parallel with provided meta information
+            rib_metas.par_iter().for_each(|rib_meta| {
                 let mut ribeye = RibEye::new()
                     .with_default_processors(dir.as_str())
-                    .with_rib_meta(&rib_meta);
-
+                    .with_rib_meta(rib_meta);
                 ribeye
                     .process_mrt_file(rib_meta.rib_dump_url.as_str())
                     .unwrap();
             });
+
+            info!("summarize all latest results");
+            let mut ribeye = RibEye::new().with_default_processors(dir.as_str());
+            ribeye.summarize_latest_files(&rib_metas).unwrap();
         }
     }
 }

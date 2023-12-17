@@ -80,4 +80,17 @@ impl RibEye {
         }
         Ok(())
     }
+
+    pub fn summarize_latest_files(&mut self, rib_metas: &[RibMeta]) -> Result<()> {
+        for processor in &mut self.processors {
+            info!(
+                "summarizing latest files for processor: {}",
+                processor.name()
+            );
+            if let Err(e) = processor.summarize_latest(rib_metas, true) {
+                info!("failed to summarize latest files: {}", e);
+            }
+        }
+        Ok(())
+    }
 }
