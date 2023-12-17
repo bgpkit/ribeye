@@ -13,7 +13,7 @@ job "ribeye_periodic" {
 
     config {
       command = "/usr/local/bin/ribeye"
-      args    = ["cook", "--dir", "s3://spaces/ribeye"]
+      args    = ["cook", "--dir", "s3://spaces/ribeye", "--env", "/usr/local/etc/bgpkit.d/ribeye_credentials"]
     }
 
     resources {
