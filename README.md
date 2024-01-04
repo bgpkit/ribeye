@@ -10,9 +10,9 @@ Processors:
 - [X] `as2rel`: AS-level relationship
 
 Aggregator (aggregate from all files of the same day):
-- [ ] `peer-stats`
-- [ ] `pfx2as`
-- [ ] `as2rel`
+- [X] `peer-stats`
+- [X] `pfx2as`
+- [X] `as2rel`
 
 ## Run
 
