@@ -17,3 +17,6 @@ Cargo.lock
 
 *.bz2
 .env
+
+results*
+.DS_*
