@@ -1,6 +1,6 @@
 [package]
 name = "ribeye"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Mingwei Zhang <mingwei@bgpkit.com>"]
 readme = "README.md"
@@ -40,11 +40,13 @@ clap = {version = "4.3", features = ["derive"], optional = true }
 tracing-subscriber = {version="0.3", features = ["env-filter"], optional = true }
 rayon = { version="1.7", optional = true }
 dotenvy = { version = "0.15.7", optional = true}
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 
 [features]
 default = ["cli"]
 processors = [ "ipnet", "serde", "serde_json", "bgpkit-broker", "chrono", "itertools", "oneio", "tempfile"]
 cli = [ "processors", "clap", "tracing-subscriber", "rayon", "dotenvy"]
+vendored-openssl = ["openssl"]
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
