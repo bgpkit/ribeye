@@ -234,11 +234,7 @@ impl MessageProcessor for PeerStatsProcessor {
             }
         }
 
-        let peers = self
-            .peer_info_map
-            .values()
-            .map(|peer_info| peer_info.into())
-            .collect();
+        let peers = peer_info_map.into_values().collect();
 
         let json_data = PeerInfoSummaryJson {
             peers,
