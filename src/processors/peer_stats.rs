@@ -13,6 +13,7 @@ use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use tracing::{info, warn};
 
@@ -44,8 +45,8 @@ pub struct PeerInfoEntry {
     pub num_v4_pfxs: usize,
     pub num_v6_pfxs: usize,
     pub num_connected_asns: usize,
-    pub ipv4_default: bool,
-    pub ipv6_default: bool,
+    pub has_v4_default: bool,
+    pub has_v6_default: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,13 +54,27 @@ pub struct PeerInfoCollectorJson {
     pub project: String,
     pub collector: String,
     pub rib_dump_url: String,
-    pub peer: HashMap<IpAddr, PeerInfoEntry>,
+    pub peers: HashSet<PeerInfoEntry>,
 }
+
+impl PartialEq<Self> for PeerInfoEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.ip == other.ip
+    }
+}
+
+impl Hash for PeerInfoEntry {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ip.hash(state);
+    }
+}
+
+impl Eq for PeerInfoEntry {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfoSummaryJson {
     pub rib_dump_urls: Vec<String>,
-    pub peer: HashMap<IpAddr, PeerInfoEntry>,
+    pub peers: HashSet<PeerInfoEntry>,
 }
 
 impl PeerInfo {
@@ -86,8 +101,8 @@ impl From<&PeerInfo> for PeerInfoEntry {
             num_v4_pfxs: peer_info.ipv4_pfxs.len(),
             num_v6_pfxs: peer_info.ipv6_pfxs.len(),
             num_connected_asns: peer_info.num_connected_asns.len(),
-            ipv4_default: peer_info.ipv4_default,
-            ipv6_default: peer_info.ipv6_default,
+            has_v4_default: peer_info.ipv4_default,
+            has_v6_default: peer_info.ipv6_default,
         }
     }
 }
@@ -181,10 +196,10 @@ impl MessageProcessor for PeerStatsProcessor {
             project: rib_meta.project.clone(),
             collector: rib_meta.collector.clone(),
             rib_dump_url: rib_meta.rib_dump_url.clone(),
-            peer: self
+            peers: self
                 .peer_info_map
                 .values()
-                .map(|peer_info| (peer_info.ip, peer_info.into()))
+                .map(|peer_info| peer_info.into())
                 .collect(),
         });
 
@@ -214,12 +229,19 @@ impl MessageProcessor for PeerStatsProcessor {
                     }
                 };
 
-            for (ip, entry) in data.peer {
-                peer_info_map.insert(ip, entry);
+            for entry in data.peers {
+                peer_info_map.insert(entry.ip, entry);
             }
         }
+
+        let peers = self
+            .peer_info_map
+            .values()
+            .map(|peer_info| peer_info.into())
+            .collect();
+
         let json_data = PeerInfoSummaryJson {
-            peer: peer_info_map,
+            peers,
             rib_dump_urls: rib_metas.iter().map(|r| r.rib_dump_url.clone()).collect(),
         };
 

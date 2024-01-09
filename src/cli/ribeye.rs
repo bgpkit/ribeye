@@ -36,6 +36,10 @@ enum Commands {
         /// Root data directory
         #[clap(short, long, default_value = "./results")]
         dir: String,
+
+        /// Only summarize latest results
+        #[clap(long)]
+        summarize_only: bool,
     },
 }
 
@@ -63,7 +67,12 @@ fn main() {
     dotenvy::dotenv().ok();
 
     match opts.command {
-        Commands::Cook { days, dir, limit } => {
+        Commands::Cook {
+            days,
+            dir,
+            limit,
+            summarize_only,
+        } => {
             // check s3 environment variables if dir starts with s3://
             if dir.starts_with("s3://") && oneio::s3_env_check().is_err() {
                 error!("S3 environment variables not set");
@@ -90,18 +99,20 @@ fn main() {
                 Some(l) => rib_files.into_iter().take(l).collect::<Vec<BrokerItem>>(),
             };
 
-            info!("processing {} matching RIB dump files", rib_files.len(),);
             let rib_metas: Vec<RibMeta> = rib_files.iter().map(RibMeta::from).collect();
 
-            // process each RIB file in parallel with provided meta information
-            rib_metas.par_iter().for_each(|rib_meta| {
-                let mut ribeye = RibEye::new()
-                    .with_default_processors(dir.as_str())
-                    .with_rib_meta(rib_meta);
-                ribeye
-                    .process_mrt_file(rib_meta.rib_dump_url.as_str())
-                    .unwrap();
-            });
+            if !summarize_only {
+                // process each RIB file in parallel with provided meta information
+                info!("processing {} matching RIB dump files", rib_files.len(),);
+                rib_metas.par_iter().for_each(|rib_meta| {
+                    let mut ribeye = RibEye::new()
+                        .with_default_processors(dir.as_str())
+                        .with_rib_meta(rib_meta);
+                    ribeye
+                        .process_mrt_file(rib_meta.rib_dump_url.as_str())
+                        .unwrap();
+                });
+            }
 
             info!("summarize all latest results");
             let mut ribeye = RibEye::new().with_default_processors(dir.as_str());
