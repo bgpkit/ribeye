@@ -221,7 +221,7 @@ impl MessageProcessor for As2relProcessor {
             self.processor_meta.name.as_str(),
         );
         let output_content = serde_json::to_string_pretty(&json_data)?;
-        write_output_file(output_file_dir.as_str(), output_content.as_str())?;
+        write_output_file(output_file_dir.as_str(), output_content.as_str(), true)?;
 
         Ok(())
     }

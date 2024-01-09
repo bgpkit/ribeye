@@ -98,8 +98,15 @@ pub trait MessageProcessor {
     }
 }
 
-pub(crate) fn write_output_file(output_file_dir: &str, output_content: &str) -> Result<()> {
-    let output_file_path = format!("{}/latest.json.bz2", output_file_dir);
+pub(crate) fn write_output_file(
+    output_file_dir: &str,
+    output_content: &str,
+    compress: bool,
+) -> Result<()> {
+    let output_file_path = match compress {
+        true => format!("{}/latest.json.bz2", output_file_dir),
+        false => format!("{}/latest.json", output_file_dir),
+    };
     match output_file_dir.starts_with("s3://") {
         true => {
             // write to a temporary file first

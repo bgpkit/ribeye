@@ -248,8 +248,9 @@ impl MessageProcessor for PeerStatsProcessor {
         );
         let output_content = serde_json::to_string_pretty(&json_data)?;
 
-        write_output_file(output_file_dir.as_str(), output_content.as_str())?;
-
+        // output both compressed and uncompressed latest.json file
+        write_output_file(output_file_dir.as_str(), output_content.as_str(), true)?;
+        write_output_file(output_file_dir.as_str(), output_content.as_str(), false)?;
         Ok(())
     }
 }
