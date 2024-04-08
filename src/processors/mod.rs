@@ -6,11 +6,13 @@ mod as2rel;
 mod meta;
 mod peer_stats;
 mod pfx2as;
+mod pfx2dist;
 
 pub use as2rel::As2relProcessor;
 pub use meta::RibMeta;
 pub use peer_stats::PeerStatsProcessor;
 pub use pfx2as::Prefix2AsProcessor;
+pub use pfx2dist::Prefix2DistProcessor;
 
 use anyhow::Result;
 use bgpkit_parser::BgpElem;

@@ -22,6 +22,8 @@ pub struct RibEye {
     processors: Vec<Box<dyn MessageProcessor>>,
 }
 
+impl RibEye {}
+
 impl RibEye {
     pub fn new() -> Self {
         Self::default()
@@ -33,10 +35,61 @@ impl RibEye {
     /// - PeerStatsProcessor
     /// - Prefix2AsProcessor
     /// - As2relProcessor
-    pub fn with_default_processors(mut self, output_dir: &str) -> Self {
-        self.add_processor(Box::new(processors::PeerStatsProcessor::new(output_dir)));
-        self.add_processor(Box::new(processors::Prefix2AsProcessor::new(output_dir)));
-        self.add_processor(Box::new(processors::As2relProcessor::new(output_dir)));
+    /// - Prefix2DistProcessor
+    pub fn default_processors(output_dir: &str) -> Vec<Box<dyn MessageProcessor>> {
+        vec![
+            Box::new(processors::PeerStatsProcessor::new(output_dir)),
+            Box::new(processors::Prefix2AsProcessor::new(output_dir)),
+            Box::new(processors::As2relProcessor::new(output_dir)),
+            Box::new(processors::Prefix2DistProcessor::new(output_dir)),
+        ]
+    }
+
+    pub fn get_processor(
+        processor_name: &str,
+        output_dir: &str,
+    ) -> Option<Box<dyn MessageProcessor>> {
+        match processor_name.to_lowercase().as_str() {
+            "peerstats" | "peer_stats" | "peer-stats" => {
+                Some(Box::new(processors::PeerStatsProcessor::new(output_dir)))
+            }
+            "pfx2as" => Some(Box::new(processors::Prefix2AsProcessor::new(output_dir))),
+            "as2rel" => Some(Box::new(processors::As2relProcessor::new(output_dir))),
+            "pfx2dist" => Some(Box::new(processors::Prefix2DistProcessor::new(output_dir))),
+            _ => None,
+        }
+    }
+
+    pub fn get_processors(
+        processor_names: &[String],
+        output_dir: &str,
+    ) -> Result<Vec<Box<dyn MessageProcessor>>> {
+        let mut processors = Vec::new();
+        for processor_name in processor_names {
+            if let Some(processor) = Self::get_processor(processor_name, output_dir) {
+                processors.push(processor);
+            } else {
+                return Err(anyhow::anyhow!("unknown processor: {}", processor_name));
+            }
+        }
+        Ok(processors)
+    }
+
+    pub fn with_processor_names(
+        mut self,
+        processor_names: &Vec<String>,
+        output_dir: &str,
+    ) -> Result<Self> {
+        if processor_names.is_empty() {
+            self.processors = Self::default_processors(output_dir);
+        } else {
+            self.processors = Self::get_processors(processor_names.as_slice(), output_dir)?;
+        }
+        Ok(self)
+    }
+
+    pub fn with_processors(mut self, processors: Vec<Box<dyn MessageProcessor>>) -> Self {
+        self.processors = processors;
         self
     }
 

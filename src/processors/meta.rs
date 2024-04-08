@@ -49,7 +49,7 @@ pub fn get_default_output_path(rib_meta: &RibMeta, processor_meta: &ProcessorMet
         rib_meta.timestamp.year(),
         rib_meta.timestamp.month(),
         rib_meta.timestamp.day(),
-        rib_meta.timestamp.timestamp()
+        rib_meta.timestamp.and_utc().timestamp(),
     );
     output_path
 }

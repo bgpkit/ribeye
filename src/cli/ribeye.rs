@@ -33,6 +33,14 @@ enum Commands {
         #[clap(short, long)]
         limit: Option<usize>,
 
+        /// specify processors to use.
+        ///
+        /// Available processors: pfx2as, pfx2dist, as2rel, peer_stats
+        ///
+        /// If not specified, all processors will be used
+        #[clap(short, long)]
+        processors: Vec<String>,
+
         /// Root data directory
         #[clap(short, long, default_value = "./results")]
         dir: String,
@@ -69,6 +77,7 @@ fn main() {
     match opts.command {
         Commands::Cook {
             days,
+            processors,
             dir,
             limit,
             summarize_only,
@@ -86,8 +95,8 @@ fn main() {
             let mut rib_files = bgpkit_broker::BgpkitBroker::new()
                 .broker_url("https://api.broker.bgpkit.com/v3")
                 .data_type("rib")
-                .ts_start(ts_start.timestamp())
-                .ts_end(now.timestamp())
+                .ts_start(ts_start.and_utc().timestamp())
+                .ts_end(now.and_utc().timestamp())
                 .query()
                 .unwrap()
                 .into_iter()
@@ -105,9 +114,14 @@ fn main() {
                 // process each RIB file in parallel with provided meta information
                 info!("processing {} matching RIB dump files", rib_files.len(),);
                 rib_metas.par_iter().for_each(|rib_meta| {
-                    let mut ribeye = RibEye::new()
-                        .with_default_processors(dir.as_str())
-                        .with_rib_meta(rib_meta);
+                    let mut ribeye =
+                        match RibEye::new().with_processor_names(&processors, dir.as_str()) {
+                            Ok(p) => p.with_rib_meta(rib_meta),
+                            Err(e) => {
+                                error!("failed to initialize RibEye: {}", e);
+                                exit(2);
+                            }
+                        };
                     ribeye
                         .process_mrt_file(rib_meta.rib_dump_url.as_str())
                         .unwrap();
@@ -115,7 +129,13 @@ fn main() {
             }
 
             info!("summarize all latest results");
-            let mut ribeye = RibEye::new().with_default_processors(dir.as_str());
+            let mut ribeye = match RibEye::new().with_processor_names(&processors, dir.as_str()) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("failed to initialize RibEye: {}", e);
+                    exit(3);
+                }
+            };
             ribeye.summarize_latest_files(&rib_metas).unwrap();
         }
     }
