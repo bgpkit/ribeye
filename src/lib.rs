@@ -41,7 +41,8 @@ impl RibEye {
             Box::new(processors::PeerStatsProcessor::new(output_dir)),
             Box::new(processors::Prefix2AsProcessor::new(output_dir)),
             Box::new(processors::As2relProcessor::new(output_dir)),
-            Box::new(processors::Prefix2DistProcessor::new(output_dir)),
+            // Prefix2DistProcessor is disabled by default due to high RAM usage
+            // Box::new(processors::Prefix2DistProcessor::new(output_dir)),
         ]
     }
 
