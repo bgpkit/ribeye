@@ -33,6 +33,10 @@ enum Commands {
         #[clap(short, long)]
         limit: Option<usize>,
 
+        /// Specify route collector to use (e.g. route-views2, rrc00).
+        #[clap(short, long)]
+        collector: Option<String>,
+
         /// specify processors to use.
         ///
         /// Available processors: pfx2as, pfx2dist, as2rel, peer_stats
@@ -40,6 +44,10 @@ enum Commands {
         /// If not specified, all processors will be used
         #[clap(short, long)]
         processors: Vec<String>,
+
+        /// Number of threads to use
+        #[clap(short, long)]
+        threads: Option<usize>,
 
         /// Root data directory
         #[clap(short, long, default_value = "./results")]
@@ -78,7 +86,9 @@ fn main() {
         Commands::Cook {
             days,
             processors,
+            collector,
             dir,
+            threads,
             limit,
             summarize_only,
         } => {
@@ -92,11 +102,16 @@ fn main() {
             let now = chrono::Utc::now().naive_utc();
             let ts_start = now - chrono::Duration::days(days as i64);
             info!("Searching for RIB dump files since {}", ts_start);
-            let mut rib_files = bgpkit_broker::BgpkitBroker::new()
+            let mut broker = bgpkit_broker::BgpkitBroker::new()
                 .broker_url("https://api.broker.bgpkit.com/v3")
                 .data_type("rib")
                 .ts_start(ts_start.and_utc().timestamp())
-                .ts_end(now.and_utc().timestamp())
+                .ts_end(now.and_utc().timestamp());
+            if let Some(c) = collector {
+                broker = broker.collector_id(c.as_str());
+            }
+
+            let mut rib_files = broker
                 .query()
                 .unwrap()
                 .into_iter()
@@ -111,6 +126,19 @@ fn main() {
             let rib_metas: Vec<RibMeta> = rib_files.iter().map(RibMeta::from).collect();
 
             if !summarize_only {
+                match threads {
+                    None => {
+                        info!("using maximum threads for processing");
+                        rayon::ThreadPoolBuilder::new().build_global().unwrap();
+                    }
+                    Some(t) => {
+                        info!("using {} threads for processing", t);
+                        rayon::ThreadPoolBuilder::new()
+                            .num_threads(t)
+                            .build_global()
+                            .unwrap();
+                    }
+                }
                 // process each RIB file in parallel with provided meta information
                 info!("processing {} matching RIB dump files", rib_files.len(),);
                 rib_metas.par_iter().for_each(|rib_meta| {
